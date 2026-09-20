@@ -81,203 +81,17 @@ on:
         type: boolean
         default: 'true'
 
-      # ===================== 文件系统开关 =====================
-      ext2_fs_enable:
-        description: '启用 EXT2_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      ext3_fs_enable:
-        description: '启用 EXT3_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      reiserfs_fs_enable:
-        description: '启用 REISERFS_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      jfs_fs_enable:
-        description: '启用 JFS_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      xfs_fs_enable:
-        description: '启用 XFS_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      gfs2_fs_enable:
-        description: '启用 GFS2_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      ocfs2_fs_enable:
-        description: '启用 OCFS2_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      btrfs_fs_enable:
-        description: '启用 BTRFS_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      nilfs2_fs_enable:
-        description: '启用 NILFS2_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      bcachefs_fs_enable:
-        description: '启用 BCACHEFS_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      zonefs_fs_enable:
-        description: '启用 ZONEFS_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      nfs_fs_enable:
-        description: '启用 NFS_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      ceph_fs_enable:
-        description: '启用 CEPH_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      coda_fs_enable:
-        description: '启用 CODA_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      afs_fs_enable:
-        description: '启用 AFS_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      p9_fs_enable:
-        description: '启用 9P_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      autofs_fs_enable:
-        description: '启用 AUTOFS_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      iso9660_fs_enable:
-        description: '启用 ISO9660_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      udf_fs_enable:
-        description: '启用 UDF_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      efivar_fs_enable:
-        description: '启用 EFIVAR_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      fscache_enable:
-        description: '启用 FSCACHE'
-        required: true
-        type: boolean
-        default: 'false'
-      adfs_fs_enable:
-        description: '启用 ADFS_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      affs_fs_enable:
-        description: '启用 AFFS_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      ecrypt_fs_enable:
-        description: '启用 ECRYPT_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      hfs_fs_enable:
-        description: '启用 HFS_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      hfsplus_fs_enable:
-        description: '启用 HFSPLUS_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      befs_fs_enable:
-        description: '启用 BEFS_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      bfs_fs_enable:
-        description: '启用 BFS_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      efs_fs_enable:
-        description: '启用 EFS_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      vxfs_fs_enable:
-        description: '启用 VXFS_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      minix_fs_enable:
-        description: '启用 MINIX_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      omfs_fs_enable:
-        description: '启用 OMFS_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      hpfs_fs_enable:
-        description: '启用 HPFS_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      qnx4_fs_enable:
-        description: '启用 QNX4FS_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      qnx6_fs_enable:
-        description: '启用 QNX6FS_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      romfs_fs_enable:
-        description: '启用 ROMFS_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      sysv_fs_enable:
-        description: '启用 SYSV_FS'
-        required: true
-        type: boolean
-        default: 'false'
-      ufs_fs_enable:
-        description: '启用 UFS_FS'
-        required: true
-        type: boolean
-        default: 'false'
-
+      # ===================== 文件系统开关（合并） =====================
       all_fs_enable:
-        description: '是否开启所有文件系统支持（忽略上面单个选项，全部编译进内核）'
+        description: '是否开启所有文件系统支持(开启后忽略extra_fs，全部编译进内核; 包含ext2,ext3,reiserfs,jfs,xfs,gfs2,ocfs2,btrfs,nilfs2,bcachefs,zonefs,nfs,ceph,coda,afs,9p,autofs,iso9660,udf,efivar,fscache,adfs,affs,ecrypt,hfs,hfsplus,befs,bfs,efs,vxfs,minix,omfs,hpfs,qnx4,qnx6,romfs,sysv,ufs)'
         required: true
         type: boolean
         default: 'false'
+      extra_fs:
+        description: '额外/单个文件系统(英文逗号分隔,例如: btrfs,zfs,nfs,xfs ; 支持: ext2,ext3,reiserfs,jfs,xfs,gfs2,ocfs2,btrfs,nilfs2,bcachefs,zonefs,nfs,ceph,coda,afs,9p,autofs,iso9660,udf,efivar,fscache,adfs,affs,ecrypt,hfs,hfsplus,befs,bfs,efs,vxfs,minix,omfs,hpfs,qnx4,qnx6,romfs,sysv,ufs)'
+        required: false
+        type: string
+        default: ''
 
       # ===================== 可选 NBD =====================
       nbd_enable:
@@ -585,55 +399,73 @@ jobs:
           wget https://github.com/$GITHUB_REPOSITORY/raw/refs/heads/$GITHUB_REF_NAME/other_patch/cve-2026-43499-rtmutex-6.12.patch
           patch -p1 -F 3 < cve-2026-43499-rtmutex-6.12.patch
 
-      # ===================== 文件系统配置 =====================
-      - name: 按需启用单个文件系统
-        if: inputs.all_fs_enable == false
+      # ===================== 文件系统配置（合并） =====================
+      - name: 按需启用文件系统
+        if: inputs.all_fs_enable == false && inputs.extra_fs != ''
         run: |
+          echo "正在按需启用文件系统：${{ github.event.inputs.extra_fs }}"
           cd kernel_workspace
           cfg=./common/arch/arm64/configs/gki_defconfig
-          ${{ inputs.ext2_fs_enable }} && echo 'CONFIG_EXT2_FS=y' >> $cfg
-          ${{ inputs.ext3_fs_enable }} && echo 'CONFIG_EXT3_FS=y' >> $cfg
-          ${{ inputs.reiserfs_fs_enable }} && echo 'CONFIG_REISERFS_FS=y' >> $cfg
-          ${{ inputs.jfs_fs_enable }} && echo 'CONFIG_JFS_FS=y' >> $cfg
-          ${{ inputs.xfs_fs_enable }} && echo 'CONFIG_XFS_FS=y' >> $cfg
-          ${{ inputs.gfs2_fs_enable }} && echo 'CONFIG_GFS2_FS=y' >> $cfg
-          ${{ inputs.ocfs2_fs_enable }} && echo 'CONFIG_OCFS2_FS=y' >> $cfg
-          ${{ inputs.btrfs_fs_enable }} && echo 'CONFIG_BTRFS_FS=y' >> $cfg
-          ${{ inputs.nilfs2_fs_enable }} && echo 'CONFIG_NILFS2_FS=y' >> $cfg
-          ${{ inputs.bcachefs_fs_enable }} && echo 'CONFIG_BCACHEFS_FS=y' >> $cfg
-          ${{ inputs.zonefs_fs_enable }} && echo 'CONFIG_ZONEFS_FS=y' >> $cfg
-          ${{ inputs.nfs_fs_enable }} && echo 'CONFIG_NFS_FS=y' >> $cfg
-          ${{ inputs.ceph_fs_enable }} && echo 'CONFIG_CEPH_FS=y' >> $cfg
-          ${{ inputs.coda_fs_enable }} && echo 'CONFIG_CODA_FS=y' >> $cfg
-          ${{ inputs.afs_fs_enable }} && echo 'CONFIG_AFS_FS=y' >> $cfg
-          ${{ inputs.p9_fs_enable }} && echo 'CONFIG_9P_FS=y' >> $cfg
-          ${{ inputs.autofs_fs_enable }} && echo 'CONFIG_AUTOFS_FS=y' >> $cfg
-          ${{ inputs.iso9660_fs_enable }} && echo 'CONFIG_ISO9660_FS=y' >> $cfg
-          ${{ inputs.udf_fs_enable }} && echo 'CONFIG_UDF_FS=y' >> $cfg
-          ${{ inputs.efivar_fs_enable }} && echo 'CONFIG_EFIVAR_FS=y' >> $cfg
-          ${{ inputs.fscache_enable }} && echo 'CONFIG_FSCACHE=y' >> $cfg
-          ${{ inputs.adfs_fs_enable }} && echo 'CONFIG_ADFS_FS=y' >> $cfg
-          ${{ inputs.affs_fs_enable }} && echo 'CONFIG_AFFS_FS=y' >> $cfg
-          ${{ inputs.ecrypt_fs_enable }} && echo 'CONFIG_ECRYPT_FS=y' >> $cfg
-          ${{ inputs.hfs_fs_enable }} && echo 'CONFIG_HFS_FS=y' >> $cfg
-          ${{ inputs.hfsplus_fs_enable }} && echo 'CONFIG_HFSPLUS_FS=y' >> $cfg
-          ${{ inputs.befs_fs_enable }} && echo 'CONFIG_BEFS_FS=y' >> $cfg
-          ${{ inputs.bfs_fs_enable }} && echo 'CONFIG_BFS_FS=y' >> $cfg
-          ${{ inputs.efs_fs_enable }} && echo 'CONFIG_EFS_FS=y' >> $cfg
-          ${{ inputs.vxfs_fs_enable }} && echo 'CONFIG_VXFS_FS=y' >> $cfg
-          ${{ inputs.minix_fs_enable }} && echo 'CONFIG_MINIX_FS=y' >> $cfg
-          ${{ inputs.omfs_fs_enable }} && echo 'CONFIG_OMFS_FS=y' >> $cfg
-          ${{ inputs.hpfs_fs_enable }} && echo 'CONFIG_HPFS_FS=y' >> $cfg
-          ${{ inputs.qnx4_fs_enable }} && echo 'CONFIG_QNX4FS_FS=y' >> $cfg
-          ${{ inputs.qnx6_fs_enable }} && echo 'CONFIG_QNX6FS_FS=y' >> $cfg
-          ${{ inputs.romfs_fs_enable }} && echo 'CONFIG_ROMFS_FS=y' >> $cfg
-          ${{ inputs.sysv_fs_enable }} && echo 'CONFIG_SYSV_FS=y' >> $cfg
-          ${{ inputs.ufs_fs_enable }} && echo 'CONFIG_UFS_FS=y' >> $cfg
+
+          # 文件系统名称 -> 内核配置映射
+          declare -A FS_MAP=(
+            [ext2]="CONFIG_EXT2_FS=y"
+            [ext3]="CONFIG_EXT3_FS=y"
+            [reiserfs]="CONFIG_REISERFS_FS=y"
+            [jfs]="CONFIG_JFS_FS=y"
+            [xfs]="CONFIG_XFS_FS=y"
+            [gfs2]="CONFIG_GFS2_FS=y"
+            [ocfs2]="CONFIG_OCFS2_FS=y"
+            [btrfs]="CONFIG_BTRFS_FS=y"
+            [nilfs2]="CONFIG_NILFS2_FS=y"
+            [bcachefs]="CONFIG_BCACHEFS_FS=y"
+            [zonefs]="CONFIG_ZONEFS_FS=y"
+            [nfs]="CONFIG_NFS_FS=y"
+            [ceph]="CONFIG_CEPH_FS=y"
+            [coda]="CONFIG_CODA_FS=y"
+            [afs]="CONFIG_AFS_FS=y"
+            [9p]="CONFIG_9P_FS=y"
+            [autofs]="CONFIG_AUTOFS_FS=y"
+            [iso9660]="CONFIG_ISO9660_FS=y"
+            [udf]="CONFIG_UDF_FS=y"
+            [efivar]="CONFIG_EFIVAR_FS=y"
+            [fscache]="CONFIG_FSCACHE=y"
+            [adfs]="CONFIG_ADFS_FS=y"
+            [affs]="CONFIG_AFFS_FS=y"
+            [ecrypt]="CONFIG_ECRYPT_FS=y"
+            [hfs]="CONFIG_HFS_FS=y"
+            [hfsplus]="CONFIG_HFSPLUS_FS=y"
+            [befs]="CONFIG_BEFS_FS=y"
+            [bfs]="CONFIG_BFS_FS=y"
+            [efs]="CONFIG_EFS_FS=y"
+            [vxfs]="CONFIG_VXFS_FS=y"
+            [minix]="CONFIG_MINIX_FS=y"
+            [omfs]="CONFIG_OMFS_FS=y"
+            [hpfs]="CONFIG_HPFS_FS=y"
+            [qnx4]="CONFIG_QNX4FS_FS=y"
+            [qnx6]="CONFIG_QNX6FS_FS=y"
+            [romfs]="CONFIG_ROMFS_FS=y"
+            [sysv]="CONFIG_SYSV_FS=y"
+            [ufs]="CONFIG_UFS_FS=y"
+          )
+
+          IFS=',' read -ra ITEMS <<< "${{ github.event.inputs.extra_fs }}"
+          for item in "${ITEMS[@]}"; do
+            key="$(echo "$item" | xargs | tr 'A-Z' 'a-z')"
+            if [[ -n "$key" ]]; then
+              if [[ -n "${FS_MAP[$key]}" ]]; then
+                echo "${FS_MAP[$key]}" >> "$cfg"
+                echo "已启用：$key -> ${FS_MAP[$key]}"
+              else
+                echo "警告：未知文件系统 '$key'，已跳过"
+              fi
+            fi
+          done
 
       - name: 启用全文件系统支持
         if: inputs.all_fs_enable
         run: |
-          echo "全文件系统模式：忽略单个选项，全部开启"
+          echo "全文件系统模式：忽略 extra_fs，全部开启"
           cd kernel_workspace
           cat >> ./common/arch/arm64/configs/gki_defconfig << 'EOF'
           # ===== 全文件系统支持（总开关）=====
@@ -1034,6 +866,7 @@ jobs:
           echo "Re-Kernel: ${{ github.event.inputs.rekernel_enable }}" >> ./ak3.log
           echo "BBG: ${{ github.event.inputs.baseband_guard }}" >> ./ak3.log
           echo "NBD: ${{ github.event.inputs.nbd_enable }}" >> ./ak3.log
+          echo "Extra FS: ${{ github.event.inputs.extra_fs }}" >> ./ak3.log
           echo "Extra Configs: ${{ github.event.inputs.extra_configs }}" >> ./ak3.log
           echo "All FS: ${{ github.event.inputs.all_fs_enable }}" >> ./ak3.log
           zip -z ../$AK3_NAME < ./ak3.log
@@ -1119,6 +952,7 @@ jobs:
           - Re-Kernel支持：${{ github.event.inputs.rekernel_enable }}
           - 内核级基带保护支持：${{ github.event.inputs.baseband_guard }}
           - NBD支持：${{ github.event.inputs.nbd_enable }}
+          - 额外文件系统：${{ github.event.inputs.extra_fs }}
           - 额外配置：${{ github.event.inputs.extra_configs }}
           - 全文件系统支持：${{ github.event.inputs.all_fs_enable }}
           - ReSukiSU管理器下载：[ReSukiSU_CI](https://github.com/cctv18/ReSukiSU_CI/releases)
