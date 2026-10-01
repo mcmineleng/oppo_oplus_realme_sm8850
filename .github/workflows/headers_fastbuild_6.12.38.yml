@@ -769,10 +769,14 @@ jobs:
           path: ${{ env.CCACHE_DIR }}
           key: ${{ env.CCACHE_REAL_KEY }}-${{ runner.os }}-${{ github.ref_name }}
 
-      - name: 上传内核头文件包
+      - name: 上传内核头文件包 (src)
         uses: actions/upload-artifact@v7
         with:
-          path: |
-            ${{ github.workspace }}/kernel_workspace/kernel_src.tar.gz
-            ${{ github.workspace }}/kernel_workspace/kernel_out.tar.gz
+          path: ${{ github.workspace }}/kernel_workspace/kernel_src.tar.gz
+          archive: false
+
+      - name: 上传内核头文件包 (out)
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ github.workspace }}/kernel_workspace/kernel_out.tar.gz
           archive: false
