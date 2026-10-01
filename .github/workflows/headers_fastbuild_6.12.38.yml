@@ -1,0 +1,778 @@
+name: 6.12.38 欧加真OKI内核 头文件包构建
+
+env:
+  TZ: Asia/Shanghai
+  ANDROID_VERSION: 'android16'
+  KERNEL_VERSION: '6.12'
+  SUB_VERSION: '38'
+  KERNEL_NAME: 'android16-5-g8c67d4274c0a-ab14275539-4k'
+  CCACHE_KEY: ccache-ecsv4-6.12.38
+
+on:
+  workflow_dispatch:
+    inputs:
+      ksu_type:
+        description: 'KernelSU分支(ReSukiSU/SukiSU Ultra/KernelSU Next/KSU(原版)/无内置KSU,默认ReSukiSU)'
+        required: true
+        type: choice
+        default: 'resukisu'
+        options:
+          - 'resukisu'
+          - 'sukisu'
+          - 'ksunext'
+          - 'ksu'
+          - 'none'
+      susfs_enable:
+        description: '是否开启susfs(用于增强隐藏环境挂载功能; 可能轻微增加耗电，上游更新导致不稳定时或不需要可关闭)'
+        required: true
+        type: boolean
+        default: 'true'
+      kpm_enable:
+        description: '是否开启kpm(使用KpatchNext独立实现kpm(支持任意KSU/面具环境); 不需要可保持默认关闭)'
+        required: true
+        type: boolean
+        default: 'false'
+      lz4_enable:
+        description: '是否安装 lz4 1.10.0+zstd 1.5.7 补丁'
+        required: true
+        type: boolean
+        default: 'true'
+      lz4kd_enable:
+        description: '是否安装 LZ4KD 补丁(若已开启lz4+zstd补丁则可不开启)'
+        required: true
+        type: boolean
+        default: 'false'
+      bbr_enable:
+        description: "是否启用bbr算法(优化上行数据,对手机日用无太大意义甚至可能负优化;false关闭,true仅加入算法,default启用算法并设为默认)"
+        required: true
+        type: choice
+        default: 'false'
+        options:
+          - 'false'
+          - 'true'
+          - 'default'
+      droidspaces_enable:
+        description: '是否启用Droidspaces容器支持(轻量化的完整Linux容器支持;false关闭,standard开启容器+ntsync支持,extend开启更多测试支持项)'
+        required: true
+        type: choice
+        default: 'false'
+        options:
+          - 'false'
+          - 'standard'
+          - 'extend'
+      better_net:
+        description: '是否开启网络功能拓展配置(用于为ipset及需要iptables等高级网络功能内核支持的程序提供支持)'
+        required: true
+        type: boolean
+        default: 'false'
+      adios_enable:
+        description: '是否启用ADIOS IO调度器支持(提升IO读写性能)'
+        required: true
+        type: boolean
+        default: 'true'
+      rekernel_enable:
+        description: '是否启用Re-Kernel支持(与Freezer/NoActive等软件配合, 提升应用冻结能力)'
+        required: true
+        type: boolean
+        default: 'false'
+      baseband_guard:
+        description: '是否开启内核级基带保护(阻止一切对非用户分区的写入，有效防止格机)'
+        required: true
+        type: boolean
+        default: 'true'
+
+      all_fs_enable:
+        description: '是否开启所有文件系统支持(开启后忽略extra_fs，全部编译进内核)'
+        required: true
+        type: boolean
+        default: 'false'
+      extra_fs:
+        description: '额外/单个文件系统(英文逗号分隔,例如: btrfs,zfs,nfs,xfs)'
+        required: false
+        type: string
+        default: ''
+
+      nbd_enable:
+        description: '是否启用NBD(网络块设备)支持'
+        required: true
+        type: boolean
+        default: 'false'
+
+      extra_configs:
+        description: '额外配置项(用英文逗号分隔,例如: CONFIG_XXX=y,CONFIG_YYY=m，留空则不加)'
+        required: false
+        type: string
+        default: ''
+
+      ccache_update:
+        description: '更新ccache缓存(将本次编译生成的ccache缓存覆盖至仓库缓存，在更改编译配置、源码或需要刷新缓存时开启)'
+        required: true
+        type: boolean
+        default: 'false'
+      kernel_suffix:
+        description: '内核后缀(留空默认,开头别加连字符,勿加空格等影响指令运行的保留字符)'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: 安装环境依赖+初始化源码仓库及llvm-clang19工具链
+        run: |
+          rm -rf kernel_workspace
+          mkdir kernel_workspace
+          cd kernel_workspace
+          echo "当前仓库：$GITHUB_REPOSITORY"
+          echo "当前分支：$GITHUB_REF_NAME"
+
+          sudo apt-mark hold firefox &&
+          sudo apt-mark hold libc-bin &&
+          sudo apt purge man-db &&
+          sudo rm -rf /var/lib/man-db/auto-update &&
+          sudo apt update &&
+          sudo apt-get install -y --no-install-recommends binutils python-is-python3 libssl-dev libelf-dev libdw-dev &
+
+          wget https://github.com/$GITHUB_REPOSITORY/raw/refs/heads/$GITHUB_REF_NAME/lib/ccache-x86-64 -O ccache &&
+          sudo cp -f ./ccache /usr/bin/ccache &&
+          sudo chmod +x /usr/bin/ccache &&
+          rm -f ./ccache &
+
+          echo "正在克隆源码仓库..."
+          aria2c -s16 -x16 -k1M https://github.com/cctv18/android_kernel_common_oneplus_sm8845/archive/refs/heads/oneplus/sm8845_b_16.0.0_ace_6t.zip -o common.zip &&
+          unzip -q common.zip &&
+          mv "android_kernel_common_oneplus_sm8845-oneplus-sm8845_b_16.0.0_ace_6t" common &&
+          rm -rf common.zip &
+
+          echo "正在克隆llvm-clang19工具链..." &&
+          mkdir -p clang19 &&
+          aria2c -s16 -x16 -k1M https://github.com/cctv18/oneplus_sm8650_toolchain/releases/download/LLVM-Clang19-r536225/clang-r536225.zip -o clang.zip &&
+          unzip -q clang.zip -d clang19 &&
+          rm -rf clang.zip &
+
+          echo "正在克隆Rust 1.82.0工具链..." &&
+          mkdir -p rust &&
+          aria2c -s16 -x16 -k1M https://github.com/cctv18/oneplus_sm8650_toolchain/releases/download/LLVM-Clang19-r536225/rust.zip -o rust.zip &&
+          unzip -q rust.zip -d rust &&
+          rm -rf rust.zip &
+
+          echo "正在克隆构建工具..." &&
+          aria2c -s16 -x16 -k1M https://github.com/cctv18/oneplus_sm8650_toolchain/releases/download/LLVM-Clang19-r536225/build-tools.zip -o build-tools.zip &&
+          unzip -q build-tools.zip &&
+          rm -rf build-tools.zip &
+
+          wait
+          echo "所有源码及llvm-clang19工具链初始化完成！"
+          echo "正在去除 dirty 后缀..."
+          for f in common/scripts/setlocalversion; do
+            sed -i 's/ -dirty//g' "$f"
+            sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' "$f"
+          done
+
+      - name: 配置ccache目录
+        run: |
+          echo "CCACHE_DIR=$HOME/.ccache_${{ env.KERNEL_VERSION }}.${{ env.SUB_VERSION }}" >> $GITHUB_ENV
+          echo "CCACHE_MAXSIZE=3G" >> $GITHUB_ENV
+          echo "当前磁盘空间："
+          df -h
+          echo "当前构建内核版本：${{ env.KERNEL_VERSION }}.${{ env.SUB_VERSION }}"
+          if [[ "${{ github.event.inputs.droidspaces_enable }}" != "false" ]]; then
+            CCACHE_REAL_KEY=${{ env.CCACHE_KEY }}-Droidspaces
+          else
+            CCACHE_REAL_KEY=${{ env.CCACHE_KEY }}-none
+          fi
+          echo "CCACHE_REAL_KEY=$CCACHE_REAL_KEY" >> $GITHUB_ENV
+
+      - name: 载入当前版本内核的 ccache缓存
+        uses: actions/cache@v5
+        id: ccache-restore
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ env.CCACHE_REAL_KEY }}-${{ runner.os }}-${{ github.ref_name }}
+          restore-keys: |
+            ${{ env.CCACHE_REAL_KEY }}-${{ runner.os }}-
+            ${{ env.CCACHE_REAL_KEY }}-
+
+      - name: 拉取公共预置 ccache 缓存
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "检查本地缓存状态..."
+          if [ -d "${{ env.CCACHE_DIR }}" ] && [ "$(ls -A ${{ env.CCACHE_DIR }} 2>/dev/null)" ]; then
+            echo "检测到本地已成功载入 ccache 缓存，跳过公共 ccache 拉取！"
+            exit 0
+          fi
+
+          echo "未命中缓存，尝试拉取最新公共 ccache ..."
+          mkdir -p ${{ env.CCACHE_DIR }}
+          if [[ "${{ github.event.inputs.droidspaces_enable }}" != "false" ]]; then
+            FILE_NAME="ccache-${{ env.KERNEL_VERSION }}.${{ env.SUB_VERSION }}-Droidspaces.tar.zst"
+          else
+            FILE_NAME="ccache-${{ env.KERNEL_VERSION }}.${{ env.SUB_VERSION }}.tar.zst"
+          fi
+
+          if gh release download -p "$FILE_NAME" -R cctv18/public_ccache; then
+            echo "成功下载 $FILE_NAME，正在解压..."
+            tar -I zstd -xf "$FILE_NAME" -C ${{ env.CCACHE_DIR }}
+            echo "公共 ccache 恢复完成！"
+          else
+            echo "公共 ccache 中未找到对应的 ccache 文件，将进行全量全新编译..."
+          fi
+
+      - name: 清除旧 ccache 缓存
+        if: inputs.ccache_update
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "正在清除仓库中的旧 ccache 缓存..."
+          if gh cache delete ${{ env.CCACHE_REAL_KEY }}-${{ runner.os }}-${{ github.ref_name }} -R ${{ github.repository }}; then
+            echo "成功删除旧的 ccache 缓存！"
+          else
+            echo "旧缓存不存在或已被清理！"
+          fi
+
+      - name: 初始化并配置ccache
+        run: |
+          export CCACHE_COMPILERCHECK="none"
+          export CCACHE_BASEDIR="${{ github.workspace }}"
+          export CCACHE_NOHASHDIR="true"
+          export CCACHE_NOHARDLINK="true"
+          export CCACHE_DIR="${{ env.CCACHE_DIR }}"
+          export CCACHE_MAXSIZE="${{ env.CCACHE_MAXSIZE }}"
+
+          mkdir -p "$CCACHE_DIR"
+
+          echo "配置ccache缓存大小为: $CCACHE_MAXSIZE"
+          ccache -M "$CCACHE_MAXSIZE"
+          ccache -o compression=true
+
+          echo "ccache初始状态:"
+          ccache -s
+
+          if [ "${{ steps.ccache-restore.outputs.cache-hit }}" == 'true' ]; then
+            echo "ccache缓存命中详情:"
+            ccache -sv
+          fi
+
+      - name: 添加KernelSU
+        id: ksu_version
+        run: |
+          cd kernel_workspace
+          if [[ ${{ github.event.inputs.ksu_type }} == "sukisu" || ${{ github.event.inputs.ksu_type }} == "resukisu" ]]; then
+            echo "正在配置ReSukiSU..."
+            curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/refs/heads/main/kernel/setup.sh" | bash -s main
+            echo 'CONFIG_KSU_FULL_NAME_FORMAT="%TAG_NAME%-%COMMIT_SHA%@cctv18"' >> ./common/arch/arm64/configs/gki_defconfig
+            cd ./KernelSU
+            KSU_VERSION=$(expr $(git rev-list --count main) + 30700 2>/dev/null || echo 114514)
+            echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
+          elif [[ ${{ github.event.inputs.ksu_type }} == "ksunext" ]]; then
+            echo "正在配置KernelSU Next..."
+            curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
+            cd KernelSU-Next
+            rm -rf .git
+            KSU_VERSION=$(expr $(curl -sI "https://api.github.com/repos/pershoot/KernelSU-Next/commits?sha=dev&per_page=1" | grep -i "link:" | sed -n 's/.*page=\([0-9]*\)>; rel="last".*/\1/p') "+" 30000)
+            echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
+            sed -i "s/KSU_VERSION_FALLBACK := 1/KSU_VERSION_FALLBACK := $KSU_VERSION/g" kernel/Kbuild
+            KSU_GIT_TAG=$(curl -sL "https://api.github.com/repos/KernelSU-Next/KernelSU-Next/tags" | grep -o '"name": *"[^"]*"' | head -n 1 | sed 's/"name": "//;s/"//')
+            sed -i "s/KSU_VERSION_TAG_FALLBACK := v0.0.1/KSU_VERSION_TAG_FALLBACK := $KSU_GIT_TAG/g" kernel/Kbuild
+            cd ../common/drivers/kernelsu
+            wget https://github.com/$GITHUB_REPOSITORY/raw/refs/heads/$GITHUB_REF_NAME/other_patch/apk_sign.patch
+            patch -p2 -N -F 3 < apk_sign.patch || true
+          elif [[ ${{ github.event.inputs.ksu_type }} == "ksu" ]]; then
+            echo "正在配置原版 KernelSU..."
+            curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/refs/heads/main/kernel/setup.sh" | bash -s main
+            cd ./KernelSU
+            KSU_VERSION=$(expr $(curl -sI "https://api.github.com/repos/tiann/KernelSU/commits?sha=main&per_page=1" | grep -i "link:" | sed -n 's/.*page=\([0-9]*\)>; rel="last".*/\1/p') "+" 30000)
+            echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
+            sed -i "s/DKSU_VERSION=16/DKSU_VERSION=${KSU_VERSION}/" kernel/Kbuild
+          else
+            echo "已选择无内置KernelSU模式，跳过KernelSU配置..."
+          fi
+
+      - name: 应用 KernelSU & SUSFS 补丁
+        if: inputs.susfs_enable
+        run: |
+          cd kernel_workspace
+          if [[ ${{ github.event.inputs.ksu_type }} != "none" ]]; then
+            echo "正在添加susfs补丁..."
+            git clone --depth=1 https://github.com/cctv18/susfs4oki.git susfs4ksu -b oki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}
+            cp ./susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch ./common/
+            cp ./susfs4ksu/kernel_patches/fs/* ./common/fs/
+            cp ./susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
+            cd ./common
+            patch -p1 -F 3 < 50_add_susfs_in_gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch || true
+            cd ..
+          else
+            echo "已选择无内置KernelSU模式，跳过susfs配置..."
+          fi
+          if [[ ${{ github.event.inputs.ksu_type }} == "ksu" ]]; then
+            echo "正在为原版 KernelSU 添加补丁..."
+            cp ./susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ./KernelSU/
+            cd ./KernelSU
+            patch -p1 -F 3 < 10_enable_susfs_for_ksu.patch || true
+          fi
+
+      - name: 应用lz4 1.10.0 & zstd 1.5.7补丁
+        if: inputs.lz4_enable
+        run: |
+          echo "正在添加lz4 1.10.0 & zstd 1.5.7补丁…"
+          cd kernel_workspace
+          git clone --depth=1 https://github.com/$GITHUB_REPOSITORY.git -b $GITHUB_REF_NAME $GITHUB_ACTOR
+          cp ./$GITHUB_ACTOR/zram_patch/001-lz4.patch ./common/
+          cp ./$GITHUB_ACTOR/zram_patch/002-zstd.patch ./common/
+          cd ./common
+          patch -p1 -F 3 < 001-lz4.patch || true
+          patch -p1 -F 3 < 002-zstd.patch || true
+
+      - name: 应用 lz4kd 补丁
+        if: inputs.lz4kd_enable
+        run: |
+          echo "正在添加lz4kd补丁…"
+          cd kernel_workspace/common
+          wget https://github.com/$GITHUB_REPOSITORY/raw/refs/heads/$GITHUB_REF_NAME/other_patch/lz4kd.patch
+          patch -p1 -F 3 < lz4kd.patch || true
+
+      - name: 添加SUSFS 配置项
+        if: inputs.susfs_enable
+        run: |
+          cd kernel_workspace
+          echo "CONFIG_KSU_SUSFS=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_SUS_MAP=y" >> ./common/arch/arm64/configs/gki_defconfig
+
+      - name: 添加 KSU & 其他配置项
+        run: |
+          cd kernel_workspace
+          echo "CONFIG_KSU=y" >> ./common/arch/arm64/configs/gki_defconfig
+          if [[ "${{ github.event.inputs.susfs_enable }}" == "false" ]]; then
+            echo "CONFIG_KSU_SUSFS=n" >> ./common/arch/arm64/configs/gki_defconfig
+          fi
+          echo "CONFIG_TMPFS_XATTR=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_TMPFS_POSIX_ACL=y" >> ./common/arch/arm64/configs/gki_defconfig
+          if [[ "${{ github.event.inputs.lz4kd_enable }}" == "true" ]]; then
+            echo "CONFIG_ZSMALLOC=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_CRYPTO_LZ4HC=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_CRYPTO_LZ4K=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_CRYPTO_LZ4KD=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_CRYPTO_842=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_ZRAM_BACKEND_LZ4HC=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_ZRAM_BACKEND_LZ4K=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_ZRAM_BACKEND_LZ4KD=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_ZRAM_BACKEND_842=y" >> ./common/arch/arm64/configs/gki_defconfig
+          fi
+          echo "CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y" >> ./common/arch/arm64/configs/gki_defconfig
+          sed -i 's/check_defconfig//' ./common/build.config.gki
+          echo "CONFIG_HEADERS_INSTALL=n" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_RUST=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_ANDROID_BINDER_IPC_RUST=m" >> ./common/arch/arm64/configs/gki_defconfig
+          cd common
+          wget https://github.com/$GITHUB_REPOSITORY/raw/refs/heads/$GITHUB_REF_NAME/other_patch/cve-2026-43499-rtmutex-6.12.patch
+          patch -p1 -F 3 < cve-2026-43499-rtmutex-6.12.patch
+
+      - name: 按需启用文件系统
+        if: inputs.all_fs_enable == false && inputs.extra_fs != ''
+        run: |
+          echo "正在按需启用文件系统：${{ github.event.inputs.extra_fs }}"
+          cd kernel_workspace
+          cfg=./common/arch/arm64/configs/gki_defconfig
+
+          declare -A FS_MAP=(
+            [ext2]="CONFIG_EXT2_FS=y"
+            [ext3]="CONFIG_EXT3_FS=y"
+            [reiserfs]="CONFIG_REISERFS_FS=y"
+            [jfs]="CONFIG_JFS_FS=y"
+            [xfs]="CONFIG_XFS_FS=y"
+            [gfs2]="CONFIG_GFS2_FS=y"
+            [ocfs2]="CONFIG_OCFS2_FS=y"
+            [btrfs]="CONFIG_BTRFS_FS=y"
+            [nilfs2]="CONFIG_NILFS2_FS=y"
+            [bcachefs]="CONFIG_BCACHEFS_FS=y"
+            [zonefs]="CONFIG_ZONEFS_FS=y"
+            [nfs]="CONFIG_NFS_FS=y"
+            [ceph]="CONFIG_CEPH_FS=y"
+            [coda]="CONFIG_CODA_FS=y"
+            [afs]="CONFIG_AFS_FS=y"
+            [9p]="CONFIG_9P_FS=y"
+            [autofs]="CONFIG_AUTOFS_FS=y"
+            [iso9660]="CONFIG_ISO9660_FS=y"
+            [udf]="CONFIG_UDF_FS=y"
+            [efivar]="CONFIG_EFIVAR_FS=y"
+            [fscache]="CONFIG_FSCACHE=y"
+            [adfs]="CONFIG_ADFS_FS=y"
+            [affs]="CONFIG_AFFS_FS=y"
+            [ecrypt]="CONFIG_ECRYPT_FS=y"
+            [hfs]="CONFIG_HFS_FS=y"
+            [hfsplus]="CONFIG_HFSPLUS_FS=y"
+            [befs]="CONFIG_BEFS_FS=y"
+            [bfs]="CONFIG_BFS_FS=y"
+            [efs]="CONFIG_EFS_FS=y"
+            [vxfs]="CONFIG_VXFS_FS=y"
+            [minix]="CONFIG_MINIX_FS=y"
+            [omfs]="CONFIG_OMFS_FS=y"
+            [hpfs]="CONFIG_HPFS_FS=y"
+            [qnx4]="CONFIG_QNX4FS_FS=y"
+            [qnx6]="CONFIG_QNX6FS_FS=y"
+            [romfs]="CONFIG_ROMFS_FS=y"
+            [sysv]="CONFIG_SYSV_FS=y"
+            [ufs]="CONFIG_UFS_FS=y"
+          )
+
+          IFS=',' read -ra ITEMS <<< "${{ github.event.inputs.extra_fs }}"
+          for item in "${ITEMS[@]}"; do
+            key="$(echo "$item" | xargs | tr 'A-Z' 'a-z')"
+            if [[ -n "$key" ]]; then
+              if [[ -n "${FS_MAP[$key]}" ]]; then
+                echo "${FS_MAP[$key]}" >> "$cfg"
+                echo "已启用：$key -> ${FS_MAP[$key]}"
+              else
+                echo "警告：未知文件系统 '$key'，已跳过"
+              fi
+            fi
+          done
+
+      - name: 启用全文件系统支持
+        if: inputs.all_fs_enable
+        run: |
+          echo "全文件系统模式：忽略 extra_fs，全部开启"
+          cd kernel_workspace
+          cat >> ./common/arch/arm64/configs/gki_defconfig << 'EOF'
+          # ===== 全文件系统支持（总开关）=====
+          CONFIG_SCSI_PROC_FS=y
+          CONFIG_EXT2_FS=y
+          CONFIG_EXT3_FS=y
+          CONFIG_REISERFS_FS=y
+          CONFIG_JFS_FS=y
+          CONFIG_XFS_FS=y
+          CONFIG_GFS2_FS=y
+          CONFIG_OCFS2_FS=y
+          CONFIG_BTRFS_FS=y
+          CONFIG_NILFS2_FS=y
+          CONFIG_BCACHEFS_FS=y
+          CONFIG_ZONEFS_FS=y
+          CONFIG_NFS_FS=y
+          CONFIG_CEPH_FS=y
+          CONFIG_CODA_FS=y
+          CONFIG_AFS_FS=y
+          CONFIG_9P_FS=y
+          CONFIG_AUTOFS_FS=y
+          CONFIG_ISO9660_FS=y
+          CONFIG_UDF_FS=y
+          CONFIG_EFIVAR_FS=y
+          CONFIG_FSCACHE=y
+          CONFIG_ADFS_FS=y
+          CONFIG_AFFS_FS=y
+          CONFIG_ECRYPT_FS=y
+          CONFIG_HFS_FS=y
+          CONFIG_HFSPLUS_FS=y
+          CONFIG_BEFS_FS=y
+          CONFIG_BFS_FS=y
+          CONFIG_EFS_FS=y
+          CONFIG_VXFS_FS=y
+          CONFIG_MINIX_FS=y
+          CONFIG_OMFS_FS=y
+          CONFIG_HPFS_FS=y
+          CONFIG_QNX4FS_FS=y
+          CONFIG_QNX6FS_FS=y
+          CONFIG_ROMFS_FS=y
+          CONFIG_SYSV_FS=y
+          CONFIG_UFS_FS=y
+          EOF
+
+      - name: 启用 NBD 支持
+        if: inputs.nbd_enable
+        run: |
+          echo "正在启用 NBD 网络块设备支持..."
+          cd kernel_workspace
+          echo "CONFIG_BLK_DEV_NBD=y" >> ./common/arch/arm64/configs/gki_defconfig
+
+      - name: 添加额外配置项
+        if: inputs.extra_configs != ''
+        run: |
+          echo "正在添加额外配置项：${{ github.event.inputs.extra_configs }}"
+          cd kernel_workspace
+          cfg=./common/arch/arm64/configs/gki_defconfig
+          IFS=',' read -ra CONFIGS <<< "${{ github.event.inputs.extra_configs }}"
+          for item in "${CONFIGS[@]}"; do
+            item_trimmed="$(echo "$item" | xargs)"
+            if [[ -n "$item_trimmed" ]]; then
+              echo "$item_trimmed" >> "$cfg"
+              echo "已追加：$item_trimmed"
+            fi
+          done
+
+      - name: 启用网络功能增强优化配置
+        if: inputs.better_net
+        run: |
+          cd kernel_workspace
+          echo "CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_NETFILTER_XT_SET=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_IP_SET=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_IP_SET_MAX=65534" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_IP_SET_BITMAP_IP=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_IP_SET_BITMAP_IPMAC=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_IP_SET_BITMAP_PORT=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_IP_SET_HASH_IP=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_IP_SET_HASH_IPMARK=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_IP_SET_HASH_IPPORT=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_IP_SET_HASH_IPPORTIP=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_IP_SET_HASH_IPPORTNET=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_IP_SET_HASH_IPMAC=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_IP_SET_HASH_MAC=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_IP_SET_HASH_NETPORTNET=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_IP_SET_HASH_NET=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_IP_SET_HASH_NETNET=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_IP_SET_HASH_NETPORT=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_IP_SET_HASH_NETIFACE=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_IP_SET_LIST_SET=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_IP6_NF_NAT=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_IP6_NF_TARGET_MASQUERADE=y" >> ./common/arch/arm64/configs/gki_defconfig
+          cd common
+          wget https://github.com/$GITHUB_REPOSITORY/raw/refs/heads/$GITHUB_REF_NAME/other_patch/config.patch
+          patch -p1 -F 3 < config.patch || true
+
+      - name: 添加 BBR 等一系列拥塞控制算法
+        run: |
+          if [[ "${{ github.event.inputs.bbr_enable }}" != "false" ]]; then
+            echo "正在添加BBR等拥塞控制算法..."
+            cd kernel_workspace
+            echo "CONFIG_TCP_CONG_ADVANCED=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_TCP_CONG_BBR=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_TCP_CONG_CUBIC=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_TCP_CONG_VEGAS=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_TCP_CONG_NV=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_TCP_CONG_WESTWOOD=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_TCP_CONG_HTCP=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_TCP_CONG_BRUTAL=y" >> ./common/arch/arm64/configs/gki_defconfig
+            if [[ "${{ github.event.inputs.bbr_enable }}" == "default" ]]; then
+              echo "CONFIG_DEFAULT_TCP_CONG=bbr" >> ./common/arch/arm64/configs/gki_defconfig
+            else
+              echo "CONFIG_DEFAULT_TCP_CONG=cubic" >> ./common/arch/arm64/configs/gki_defconfig
+            fi
+          fi
+
+      - name: 启用 Droidspaces 容器支持
+        run: |
+          if [[ "${{ github.event.inputs.droidspaces_enable }}" != "false" ]]; then
+            echo "正在启用 Droidspaces 容器支持..."
+            cd kernel_workspace/common
+            wget https://github.com/$GITHUB_REPOSITORY/raw/refs/heads/$GITHUB_REF_NAME/droidspaces_patch/fix_sysvipc_kabi_a16-6.12.patch
+            patch -p1 -F 3 < fix_sysvipc_kabi_a16-6.12.patch || true
+            wget https://github.com/$GITHUB_REPOSITORY/raw/refs/heads/$GITHUB_REF_NAME/droidspaces_patch/fix_oplus_bsp_midas.patch
+            patch -p1 -F 3 < fix_oplus_bsp_midas.patch || true
+            wget https://github.com/$GITHUB_REPOSITORY/raw/refs/heads/$GITHUB_REF_NAME/droidspaces_patch/ddl_hit_hook.patch
+            patch -p1 -F 3 < ddl_hit_hook.patch || true
+            wget https://github.com/$GITHUB_REPOSITORY/raw/refs/heads/$GITHUB_REF_NAME/droidspaces_patch/ntsync_compat_${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch
+            patch -p1 -F 3 < ntsync_compat_${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch || true
+            echo "CONFIG_PID_NS=y" >> ./arch/arm64/configs/gki_defconfig
+            echo "CONFIG_IPC_NS=y" >> ./arch/arm64/configs/gki_defconfig
+            echo "CONFIG_USER_NS=y" >> ./arch/arm64/configs/gki_defconfig
+            echo "CONFIG_SYSVIPC=y" >> ./arch/arm64/configs/gki_defconfig
+            echo "CONFIG_DEVTMPFS=y" >> ./arch/arm64/configs/gki_defconfig
+            echo "CONFIG_NAMESPACES=y" >> ./arch/arm64/configs/gki_defconfig
+            echo "CONFIG_POSIX_MQUEUE=y" >> ./arch/arm64/configs/gki_defconfig
+            echo "CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y" >> ./arch/arm64/configs/gki_defconfig
+            echo "CONFIG_NETFILTER_XT_TARGET_LOG=y" >> ./arch/arm64/configs/gki_defconfig
+            echo "CONFIG_NETFILTER_XT_MATCH_RECENT=y" >> ./arch/arm64/configs/gki_defconfig
+            echo "CONFIG_NTSYNC=y" >> ./arch/arm64/configs/gki_defconfig
+            if [[ "${{ github.event.inputs.droidspaces_enable }}" == "extend" ]]; then
+              echo "正在启用容器环境扩展支持..."
+              echo "CONFIG_BT_HCIVHCI=y" >> ./arch/arm64/configs/gki_defconfig
+              echo "CONFIG_STATIC_USERMODEHELPER=n" >> ./arch/arm64/configs/gki_defconfig
+            fi
+          fi
+
+      - name: 启用ADIOS IO调度器
+        if: inputs.adios_enable
+        run: |
+          echo "正在启用ADIOS IO调度器..."
+          cd kernel_workspace
+          echo "CONFIG_MQ_IOSCHED_ADIOS=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_MQ_IOSCHED_DEFAULT_ADIOS=y" >> ./common/arch/arm64/configs/gki_defconfig
+
+      - name: 启用Re-Kernel支持
+        if: inputs.rekernel_enable
+        run: |
+          echo "正在启用Re-Kernel支持..."
+          cd kernel_workspace
+          echo "CONFIG_REKERNEL=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_REKERNEL_NETWORK=y" >> ./common/arch/arm64/configs/gki_defconfig
+
+      - name: 启用内核级基带保护
+        if: inputs.baseband_guard
+        run: |
+          echo "正在启用内核级基带保护..."
+          cd kernel_workspace
+          echo "CONFIG_BBG=y" >> ./common/arch/arm64/configs/gki_defconfig
+          cd ./common
+          curl -sSL https://github.com/cctv18/Baseband-guard/raw/master/setup.sh | bash
+          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' security/Kconfig
+
+      - name: 添加制作名称
+        run: |
+          cd kernel_workspace
+          if [[ -n "${{ github.event.inputs.kernel_suffix }}" ]]; then
+            echo "当前内核版本后缀：${{ github.event.inputs.kernel_suffix }}"
+            for f in ./common/scripts/setlocalversion; do
+              sed -i "\$s|echo \"\\\$res\"|echo \"-${{ github.event.inputs.kernel_suffix }}\"|" "$f"
+            done
+            sudo sed -i 's/-4k/-${{ github.event.inputs.kernel_suffix }}/g' ./common/arch/arm64/configs/gki_defconfig
+          else
+            echo "当前内核版本后缀：${{ env.KERNEL_NAME }}"
+            for f in ./common/scripts/setlocalversion; do
+              sed -i "\$s|echo \"\\\$res\"|echo \"-${{ env.KERNEL_NAME }}\"|" "$f"
+            done
+            sudo sed -i 's/-4k/-${{ env.KERNEL_NAME }}/g' ./common/arch/arm64/configs/gki_defconfig
+          fi
+          sed -i 's/${scm_version}//' ./common/scripts/setlocalversion
+          echo "CONFIG_LOCALVERSION_AUTO=n" >> ./common/arch/arm64/configs/gki_defconfig
+
+      - name: 构建内核
+        run: |
+          WORKDIR="$(pwd)"
+          export PATH="/usr/lib/ccache:$PATH"
+          export PATH="$WORKDIR/kernel_workspace/clang19/bin:$PATH"
+          export PATH="$WORKDIR/kernel_workspace/build-tools/bin:$PATH"
+          export PATH="$WORKDIR/kernel_workspace/rust/bin:$PATH"
+          export CLANG_DIR="$WORKDIR/kernel_workspace/clang19/bin"
+          CLANG_VERSION="$($CLANG_DIR/clang --version | head -n 1)"
+          LLD_VERSION="$($CLANG_DIR/ld.lld --version | head -n 1)"
+          RUSTC_VERSION="$(rustc -V 2>/dev/null | head -n1)"
+          BINDGEN_VERSION="$(bindgen --version 2>/dev/null | head -n1)"
+          echo "编译器信息:"
+          echo "Clang版本: $CLANG_VERSION"
+          echo "LLD版本: $LLD_VERSION"
+          echo "Rustc版本: $RUSTC_VERSION"
+          echo "Bindgen版本: $BINDGEN_VERSION"
+
+          export CCACHE_LOGFILE="${{ github.workspace }}/kernel_workspace/ccache.log"
+          export CCACHE_COMPILERCHECK="none"
+          export CCACHE_BASEDIR="${{ github.workspace }}"
+          export CCACHE_NOHASHDIR="true"
+          export CCACHE_NOHARDLINK="true"
+          export CCACHE_DIR="${{ env.CCACHE_DIR }}"
+          export CCACHE_MAXSIZE="3G"
+          export CCACHE_IS_KERNEL_COMPILING="true"
+          echo "sloppiness = file_stat_matches,include_file_ctime,include_file_mtime,pch_defines,file_macro,time_macros" >> "$CCACHE_DIR/ccache.conf"
+
+          cd kernel_workspace/common
+          wget https://github.com/$GITHUB_REPOSITORY/raw/refs/heads/$GITHUB_REF_NAME/lib/libfakestat.so
+          wget https://github.com/$GITHUB_REPOSITORY/raw/refs/heads/$GITHUB_REF_NAME/lib/libfaketimeMT.so
+          chmod 777 ./*.so
+          export FAKESTAT="2025-05-25 12:00:00"
+          export FAKETIME="@2025-05-25 13:00:00"
+          SO_DIR=$(pwd)
+          export PRELOAD_LIBS="$SO_DIR/libfakestat.so $SO_DIR/libfaketimeMT.so"
+          export REAL_CLANG_PATH="$WORKDIR/kernel_workspace/clang19/bin/clang"
+          echo '#!/bin/bash' > cc-wrapper
+          echo 'export LD_PRELOAD="'$PRELOAD_LIBS'"' >> cc-wrapper
+          echo 'export FAKESTAT="'$FAKESTAT'"' >> cc-wrapper
+          echo 'export FAKETIME="'$FAKETIME'"' >> cc-wrapper
+          echo 'ccache $REAL_CLANG_PATH "$@"' >> cc-wrapper
+          echo '#!/bin/bash' > ld-wrapper
+          echo 'export LD_PRELOAD="'$PRELOAD_LIBS'"' >> ld-wrapper
+          echo 'export FAKESTAT="'$FAKESTAT'"' >> ld-wrapper
+          echo 'export FAKETIME="'$FAKETIME'"' >> ld-wrapper
+          echo 'ld.lld "$@"' >> ld-wrapper
+          chmod +x cc-wrapper ld-wrapper
+
+          COMMON_REAL_PATH=$(pwd -P)
+          ROOT_REAL_PATH=$(dirname "$COMMON_REAL_PATH")
+          KCFLAGS+=" -fdebug-prefix-map=$ROOT_REAL_PATH=."
+          KCFLAGS+=" -fmacro-prefix-map=$ROOT_REAL_PATH=."
+          KCFLAGS+=" -ffile-prefix-map=$ROOT_REAL_PATH=."
+          KCFLAGS+=" -no-canonical-prefixes"
+          KCFLAGS+=" -O2"
+          KCFLAGS+=" -pipe"
+          KCFLAGS+=" -Wno-error"
+          KCFLAGS+=" -fno-stack-protector"
+          KCFLAGS+=" -D__ANDROID_COMMON_KERNEL__"
+          export KCFLAGS
+          export HOSTCC=clang
+          export LLVM=1 LLVM_IAS=1
+          export ARCH=arm64 SUBARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export LD=ld.lld HOSTLD=ld.lld AR=llvm-ar NM=llvm-nm AS=clang READELF=llvm-readelf
+          export OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump OBJSIZE=llvm-size STRIP=llvm-strip
+          export RUSTC="rustc"
+          export BINDGEN="bindgen"
+          export LIBCLANG_PATH="$WORKDIR/kernel_workspace/clang19/lib"
+          source "./_setup_env.sh" 2>/dev/null || true
+
+          sudo rm -rf /usr/share/dotnet &
+          sudo rm -rf /usr/local/lib/android &
+          sudo rm -rf /opt/ghc &
+          sudo rm -rf /opt/hostedtoolcache/CodeQL &
+          wait
+
+          make -j$(nproc --all) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC="clang" LD="ld.lld" OBJCOPY="llvm-objcopy" O=out gki_defconfig &&
+          export CC="$(pwd)/cc-wrapper" && export LD="$(pwd)/ld-wrapper" &&
+          make -j$(nproc --all) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC="$(pwd)/cc-wrapper" LD="$(pwd)/ld-wrapper" OBJCOPY="llvm-objcopy" O=out Image
+
+          echo "内核编译完成！"
+          ccache -s
+          df -h
+
+      - name: 生成内核头文件并打包
+        run: |
+          WORKDIR="$(pwd)"
+          export PATH="/usr/lib/ccache:$PATH"
+          export PATH="$WORKDIR/kernel_workspace/clang19/bin:$PATH"
+          export PATH="$WORKDIR/kernel_workspace/build-tools/bin:$PATH"
+          export PATH="$WORKDIR/kernel_workspace/rust/bin:$PATH"
+
+          export HOSTCC=clang
+          export LLVM=1 LLVM_IAS=1
+          export ARCH=arm64 SUBARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export LD=ld.lld HOSTLD=ld.lld AR=llvm-ar NM=llvm-nm AS=clang READELF=llvm-readelf
+          export OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump OBJSIZE=llvm-size STRIP=llvm-strip
+          export RUSTC="rustc"
+          export BINDGEN="bindgen"
+          export LIBCLANG_PATH="$WORKDIR/kernel_workspace/clang19/lib"
+
+          cd kernel_workspace/common
+
+          # modules_prepare 生成编外部模块所需的头文件
+          make -j$(nproc --all) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- O=out modules_prepare
+
+          # 修正 out/source out/build 软链，保证解压后 make -C 可用
+          ln -sfn .. out/source
+          ln -sfn .. out/build
+
+          # 打包源码树（排除 out 与 .git，体积更小）
+          tar --exclude=./out --exclude=./.git -czf "$WORKDIR/kernel_workspace/kernel_src.tar.gz" .
+          # 打包 out 生成树（含 Module.symvers、generated headers、.config、scripts）
+          tar -czf "$WORKDIR/kernel_workspace/kernel_out.tar.gz" -C out .
+
+          ls -lh "$WORKDIR/kernel_workspace/kernel_src.tar.gz" "$WORKDIR/kernel_workspace/kernel_out.tar.gz"
+
+      - name: 保存新的 ccache 缓存
+        if: inputs.ccache_update || steps.ccache-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ env.CCACHE_REAL_KEY }}-${{ runner.os }}-${{ github.ref_name }}
+
+      - name: 上传内核头文件包
+        uses: actions/upload-artifact@v7
+        with:
+          path: |
+            ${{ github.workspace }}/kernel_workspace/kernel_src.tar.gz
+            ${{ github.workspace }}/kernel_workspace/kernel_out.tar.gz
+          archive: false
